@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de Balanceador de Carga</title>
+    <!-- METADATOS SEO ACTUALIZADOS -->
+    <meta name="description" content="Simulador interactivo de Balanceo de Carga (Load Balancer). Demuestra Round Robin, Least Connections, y manejo de fallos de servidor. Herramienta creada por Iran Lewis para NeuralCodeLab.com.">
+    <meta name="keywords" content="Load Balancer, Balanceador de Carga, Round Robin, Least Connections, Backend, Escalabilidad, Failover, Microservicios, NeuralCodeLab, Iran Lewis, neuralcodelab.com">
+    <meta name="author" content="Iran Lewis (NeuralCodeLab.com)">
+    <meta name="publisher" content="NeuralCodeLab.com">
+    <!-- FIN METADATOS SEO -->
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --color-client: #fbbf24; /* Ámbar 400 */
+            --color-lb: #3b82f6; /* Azul 500 */
+            --color-server-up: #10b981; /* Esmeralda 500 */
+            --color-server-down: #ef4444; /* Rojo 500 */
+            --color-bg: #f8fafc; /* Slate 50 */
+        }
+        body { font-family: 'Inter', sans-serif; background-color: var(--color-bg); }
+
+        .concept-box {
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            padding: 1.5rem;
+            transition: transform 0.3s ease;
+        }
+        .lb-box { border: 2px solid var(--color-lb); background-color: #eff6ff; }
+        .server-box { border: 2px solid var(--color-server-up); background-color: #ecfdf5; transition: border 0.3s, background-color 0.3s; }
+        .server-down { border: 2px solid var(--color-server-down); background-color: #fee2e2; }
+
+        .client-container {
+            border: 2px solid var(--color-client);
+            background-color: #fffbeb;
+        }
+
+        /* --- Animation Styles --- */
+        .request-animation {
+            position: fixed;
+            width: 20px;
+            height: 20px;
+            background-color: var(--color-client);
+            border-radius: 50%;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.5s ease-in-out;
+            box-shadow: 0 0 5px rgba(251, 191, 36, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.6rem;
+            color: black;
+            font-weight: bold;
+        }
+
+        /* Footer */
+        .app-footer {
+            background-color: #f1f5f9;
+            color: #475569;
+            padding: 1rem;
+            text-align: center;
+            font-size: 0.875rem;
+            margin-top: 4rem;
+            border-top: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+        }
+        .app-footer strong {
+            color: #1e3a8a;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <header class="text-center mb-8">
+        <h1 class="text-4xl font-extrabold text-gray-800">Simulador de Balanceador de Carga (Load Balancer)</h1>
+        <p class="text-xl text-gray-600 mt-2">Visualiza la distribución de peticiones a través de dos algoritmos.</p>
+    </header>
+
+    <main class="space-y-8">
+
+        <!-- Controles y Algoritmo -->
+        <div class="flex flex-col md:flex-row justify-between items-center gap-4 concept-box lb-box">
+            <div class="flex items-center gap-4">
+                <label for="algorithm-select" class="text-lg font-semibold text-gray-700">Algoritmo de Distribución:</label>
+                <select id="algorithm-select" class="p-2 border border-gray-300 rounded-lg shadow-sm w-48">
+                    <option value="round-robin">Round Robin</option>
+                    <option value="least-connections">Least Connections</option>
+                </select>
+            </div>
+            <div class="w-full md:w-auto">
+                <button onclick="sendRequest()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200 shadow-lg">
+                    Enviar Petición (Cliente)
+                </button>
+            </div>
+        </div>
+
+        <!-- Flujo: Cliente -> LB -> Servidores -->
+        <div class="flex flex-col items-center gap-8">
+            
+            <!-- CLIENTE (Origen de la Petición) -->
+            <div id="client-box" class="concept-box client-container w-full max-w-sm text-center">
+                <h2 class="text-2xl font-bold text-gray-900 flex items-center justify-center mb-2">
+                    <svg class="w-6 h-6 mr-2 text-yellow-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L12 19.25M12 19.25L14.25 17M12 19.25V4M10 7L12 5L14 7"></path></svg>
+                    Cliente (Navegador)
+                </h2>
+                <p class="text-gray-600 text-sm">Origen de la petición HTTP.</p>
+            </div>
+
+            <!-- BALANCEADOR DE CARGA -->
+            <div id="lb-box-main" class="concept-box lb-box w-full max-w-xl text-center">
+                <h2 id="lb-title" class="text-2xl font-bold text-gray-900 flex items-center justify-center mb-2">
+                    <svg class="w-6 h-6 mr-2 text-blue-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10m-4-10h18.89a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V7z"></path></svg>
+                    Balanceador de Carga (Load Balancer)
+                </h2>
+                <p id="lb-status" class="text-gray-700 text-sm">Decidiendo la mejor distribución...</p>
+            </div>
+            
+            <!-- SERVIDORES -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-4xl">
+                <!-- Servidor 1 -->
+                <div id="server-0" class="server-box server-up">
+                    <h3 class="text-xl font-bold text-gray-900 mb-2">Servidor 1 (Web/API)</h3>
+                    <p class="text-sm text-gray-700">Estado: <span id="s0-status" class="font-semibold text-green-600">Funcionando</span></p>
+                    <p class="text-sm text-gray-700 mt-1">Conexiones Activas: <span id="s0-connections" class="font-bold text-xl text-green-700">0</span></p>
+                    <button onclick="toggleServer(0)" id="s0-toggle" class="mt-3 w-full bg-red-500 hover:bg-red-600 text-white py-2 rounded-lg text-sm transition duration-200">Simular Fallo</button>
+                    <button onclick="releaseConnection(0)" id="s0-release" class="mt-2 w-full bg-gray-500 hover:bg-gray-600 text-white py-2 rounded-lg text-sm transition duration-200" disabled>Liberar Conexión</button>
+                </div>
+
+                <!-- Servidor 2 -->
+                <div id="server-1" class="server-box server-up">
+                    <h3 class="text-xl font-bold text-gray-900 mb-2">Servidor 2 (Web/API)</h3>
+                    <p class="text-sm text-gray-700">Estado: <span id="s1-status" class="font-semibold text-green-600">Funcionando</span></p>
+                    <p class="text-sm text-gray-700 mt-1">Conexiones Activas: <span id="s1-connections" class="font-bold text-xl text-green-700">0</span></p>
+                    <button onclick="toggleServer(1)" id="s1-toggle" class="mt-3 w-full bg-red-500 hover:bg-red-600 text-white py-2 rounded-lg text-sm transition duration-200">Simular Fallo</button>
+                    <button onclick="releaseConnection(1)" id="s1-release" class="mt-2 w-full bg-gray-500 hover:bg-gray-600 text-white py-2 rounded-lg text-sm transition duration-200" disabled>Liberar Conexión</button>
+                </div>
+
+                <!-- Servidor 3 -->
+                <div id="server-2" class="server-box server-up">
+                    <h3 class="text-xl font-bold text-gray-900 mb-2">Servidor 3 (Web/API)</h3>
+                    <p class="text-sm text-gray-700">Estado: <span id="s2-status" class="font-semibold text-green-600">Funcionando</span></p>
+                    <p class="text-sm text-gray-700 mt-1">Conexiones Activas: <span id="s2-connections" class="font-bold text-xl text-green-700">0</span></p>
+                    <button onclick="toggleServer(2)" id="s2-toggle" class="mt-3 w-full bg-red-500 hover:bg-red-600 text-white py-2 rounded-lg text-sm transition duration-200">Simular Fallo</button>
+                    <button onclick="releaseConnection(2)" id="s2-release" class="mt-2 w-full bg-gray-500 hover:bg-gray-600 text-white py-2 rounded-lg text-sm transition duration-200" disabled>Liberar Conexión</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Área para la animación de la petición -->
+    <div id="request-anim" class="request-animation">Req</div>
+
+    <!-- PIE DE PÁGINA / FOOTER DE ATRIBUCIÓN -->
+    <footer class="app-footer">
+        <span id="attribution-text">Herramienta desarrollada por **Iran Lewis** de **NeuralCodeLab.com**.</span>
+    </footer>
+
+    <script>
+        // Usamos un objeto global 'LB' (Load Balancer Simulator) con 'var' para encapsular las variables
+        var LB = LB || {};
+        
+        // --- 1. ESTADO DEL SISTEMA ---
+        LB.NUM_SERVERS = 3;
+        LB.serverStatus = [true, true, true]; // true = UP, false = DOWN
+        LB.activeConnections = [0, 0, 0];
+        LB.roundRobinIndex = 0;
+        LB.requestCounter = 1;
+
+        // --- 2. REFERENCIAS DEL DOM ---
+        const algorithmSelect = document.getElementById('algorithm-select');
+        const lbStatus = document.getElementById('lb-status');
+        const clientBox = document.getElementById('client-box');
+        const lbBoxMain = document.getElementById('lb-box-main');
+        const requestAnim = document.getElementById('request-anim');
+
+        const serverElements = [
+            document.getElementById('server-0'),
+            document.getElementById('server-1'),
+            document.getElementById('server-2'),
+        ];
+        const connectionDisplays = [
+            document.getElementById('s0-connections'),
+            document.getElementById('s1-connections'),
+            document.getElementById('s2-connections'),
+        ];
+        const statusDisplays = [
+            document.getElementById('s0-status'),
+            document.getElementById('s1-status'),
+            document.getElementById('s2-status'),
+        ];
+        const toggleButtons = [
+            document.getElementById('s0-toggle'),
+            document.getElementById('s1-toggle'),
+            document.getElementById('s2-toggle'),
+        ];
+        const releaseButtons = [
+            document.getElementById('s0-release'),
+            document.getElementById('s1-release'),
+            document.getElementById('s2-release'),
+        ];
+
+        // --- 3. FUNCIONES DE UTILIDAD ---
+
+        /**
+         * Calcula las coordenadas del centro de un elemento.
+         * @param {HTMLElement} element
+         */
+        function getElementCoords(element) {
+            const rect = element.getBoundingClientRect();
+            return {
+                x: rect.left + window.scrollX + rect.width / 2,
+                y: rect.top + window.scrollY + rect.height / 2
+            };
+        }
+
+        /**
+         * Función de pausa asíncrona.
+         * @param {number} ms - Milisegundos a esperar.
+         */
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        /**
+         * Actualiza el estado visual y las métricas de los servidores.
+         */
+        function renderServers() {
+            LB.serverStatus.forEach((isUp, index) => {
+                const serverEl = serverElements[index];
+                const connections = LB.activeConnections[index];
+                
+                // Actualizar clases y texto de estado
+                serverEl.classList.toggle('server-down', !isUp);
+                serverEl.classList.toggle('server-up', isUp);
+                
+                statusDisplays[index].textContent = isUp ? 'Funcionando' : '¡CAÍDO!';
+                statusDisplays[index].classList.toggle('text-green-600', isUp);
+                statusDisplays[index].classList.toggle('text-red-600', !isUp);
+
+                // Actualizar conexiones y botón de liberación
+                connectionDisplays[index].textContent = connections;
+                connectionDisplays[index].classList.toggle('text-red-700', connections > 0 && !isUp);
+                connectionDisplays[index].classList.toggle('text-green-700', connections >= 0 && isUp);
+
+                releaseButtons[index].disabled = connections === 0;
+                
+                // Actualizar botón de alternancia de estado
+                toggleButtons[index].textContent = isUp ? 'Simular Fallo' : 'Restaurar';
+                toggleButtons[index].classList.toggle('bg-red-500', isUp);
+                toggleButtons[index].classList.toggle('hover:bg-red-600', isUp);
+                toggleButtons[index].classList.toggle('bg-green-500', !isUp);
+                toggleButtons[index].classList.toggle('hover:bg-green-600', !isUp);
+            });
+        }
+
+        // --- 4. ALGORITMOS DE BALANCEO ---
+
+        /**
+         * Implementa el algoritmo Round Robin.
+         * @returns {number | null} Índice del servidor o null si todos están caídos.
+         */
+        function distributeRoundRobin() {
+            const initialIndex = LB.roundRobinIndex;
+            let attempts = 0;
+
+            while (attempts < LB.NUM_SERVERS) {
+                const target = LB.roundRobinIndex % LB.NUM_SERVERS;
+                LB.roundRobinIndex = (LB.roundRobinIndex + 1) % LB.NUM_SERVERS;
+
+                if (LB.serverStatus[target]) {
+                    // Si está UP, lo selecciona y sale
+                    return target;
+                }
+                attempts++;
+            }
+            // Si recorrimos todos y ninguno está UP
+            lbStatus.textContent = '¡FALLO! Tráfico rechazado (Todos los servidores están caídos).';
+            return null;
+        }
+
+        /**
+         * Implementa el algoritmo Least Connections (Menos Conexiones).
+         * @returns {number | null} Índice del servidor o null si todos están caídos.
+         */
+        function distributeLeastConnections() {
+            let minConnections = Infinity;
+            let bestServerIndex = null;
+            let upServersExist = false;
+
+            for (let i = 0; i < LB.NUM_SERVERS; i++) {
+                if (LB.serverStatus[i]) {
+                    upServersExist = true;
+                    if (LB.activeConnections[i] < minConnections) {
+                        minConnections = LB.activeConnections[i];
+                        bestServerIndex = i;
+                    }
+                }
+            }
+
+            if (!upServersExist) {
+                lbStatus.textContent = '¡FALLO! Tráfico rechazado (Todos los servidores están caídos).';
+                return null;
+            }
+
+            return bestServerIndex;
+        }
+
+
+        // --- 5. LÓGICA DE INTERACCIÓN ---
+
+        /**
+         * Envía una petición y la distribuye.
+         */
+        async function sendRequest() {
+            const algorithm = algorithmSelect.value;
+            let targetServerIndex = null;
+            const sendButton = document.querySelector('button[onclick="sendRequest()"]');
+            
+            sendButton.disabled = true;
+            requestAnim.textContent = LB.requestCounter;
+            
+            // 1. Petición del Cliente al LB (Animación 1)
+            const clientCoords = getElementCoords(clientBox);
+            const lbCoords = getElementCoords(lbBoxMain);
+
+            requestAnim.style.opacity = 1;
+            requestAnim.style.left = `${clientCoords.x - 10}px`;
+            requestAnim.style.top = `${clientCoords.y - 10}px`;
+
+            await sleep(300);
+
+            requestAnim.style.left = `${lbCoords.x - 10}px`;
+            requestAnim.style.top = `${lbCoords.y - 10}px`;
+
+            await sleep(300);
+
+            // 2. Ejecutar Algoritmo de Distribución
+            if (algorithm === 'round-robin') {
+                targetServerIndex = distributeRoundRobin();
+                lbStatus.textContent = `Algoritmo: Round Robin. Distribuye a S${targetServerIndex + 1}.`;
+            } else if (algorithm === 'least-connections') {
+                targetServerIndex = distributeLeastConnections();
+                lbStatus.textContent = `Algoritmo: Least Connections. Distribuye a S${targetServerIndex + 1} (Mínimas Conexiones).`;
+            }
+            
+            if (targetServerIndex !== null) {
+                // 3. Distribución al Servidor (Animación 2)
+                const targetServerEl = serverElements[targetServerIndex];
+                const serverCoords = getElementCoords(targetServerEl);
+                
+                // Mover al Servidor
+                requestAnim.style.left = `${serverCoords.x - 10}px`;
+                requestAnim.style.top = `${serverCoords.y - 10}px`;
+                
+                await sleep(500);
+
+                // 4. Servidor Acepta la Conexión
+                LB.activeConnections[targetServerIndex]++;
+                renderServers();
+
+                targetServerEl.style.boxShadow = '0 0 20px rgba(16, 185, 129, 0.9)'; // Brillo temporal
+                
+                await sleep(200);
+                targetServerEl.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'; // Restaurar sombra
+
+                // 5. Limpieza de Animación
+                requestAnim.style.opacity = 0;
+                LB.requestCounter++;
+            } else {
+                // Si la petición fue rechazada
+                await sleep(500);
+                requestAnim.style.opacity = 0;
+            }
+
+            sendButton.disabled = false;
+        }
+
+        /**
+         * Simula el fallo o restauración de un servidor.
+         * @param {number} index - Índice del servidor.
+         */
+        function toggleServer(index) {
+            LB.serverStatus[index] = !LB.serverStatus[index];
+            if (!LB.serverStatus[index] && LB.activeConnections[index] > 0) {
+                 // Si falla, pero tiene conexiones activas (Conexiones Colgadas)
+                 lbStatus.textContent = `¡ALERTA! S${index + 1} falló con ${LB.activeConnections[index]} conexiones activas (Redireccionando Tráfico Futuro).`;
+            } else if (!LB.serverStatus[index]) {
+                lbStatus.textContent = `S${index + 1} ha FALLADO. El tráfico será REDIRECCIONADO a otros servidores.`;
+            } else {
+                lbStatus.textContent = `S${index + 1} restaurado y listo para recibir tráfico.`;
+            }
+            renderServers();
+        }
+
+        /**
+         * Simula la finalización de una conexión.
+         * @param {number} index - Índice del servidor.
+         */
+        function releaseConnection(index) {
+            if (LB.activeConnections[index] > 0) {
+                LB.activeConnections[index]--;
+                lbStatus.textContent = `Conexión liberada de S${index + 1}. Conexiones activas: ${LB.activeConnections[index]}.`;
+                renderServers();
+            }
+        }
+
+        // --- 6. INICIALIZACIÓN ---
+        window.onload = function() {
+            renderServers();
+        };
+
+        // Footer I18N (para mantener la consistencia)
+        document.getElementById('attribution-text').innerHTML = "Herramienta desarrollada por **Iran Lewis** de **NeuralCodeLab.com**.";
+        
+    </script>
+</body>
+</html>
